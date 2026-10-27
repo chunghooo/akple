@@ -15,7 +15,7 @@ RULES = {
     "위협": (3, ["죽어라", "뒤져", "뒤진다", "뒤질", "자살해", "죽여버", "찾아간다", "패버"]),
     "인신공격": (2, ["미친놈", "미친년", "또라이", "돌아이", "멍청", "찐따", "한심", "쓰레기", "못생", "정신병",
                      "정병", "관종", "역겹", "꺼져", "닥쳐", "ㄲㅈ", "ㄷㅊ", "상태봐라", "꼬라지", "주제에"]),
-    "혐오": (3, ["한남충", "한녀", "김치녀", "틀딱", "급식충", "맘충", "짱깨", "쪽바리"]),
+    "혐오": (3, ["한남충", "한녀", "김치녀", "틀딱", "급식충", "잼민", "맘충", "짱깨", "쪽바리"]),
     "성적": (3, ["따먹", "몸매보"]),
 }
 SEP = r"[\s\d._*~!^♡♥,·ㅇㅋㅎㅡ-]*"  # 끼워넣은 숫자·기호·ㅇㅋㅎ 건너뜀
@@ -116,6 +116,11 @@ SLUR = re.compile(r"과학이|걸러야|거르|지능|미개|종특|원래 그�
                   r"(통계|팩트)로?\s*(증명|확인)|역시\s*\S*(들|것들)은|하는 짓")
 
 
+# 욕 없이 하는 성희롱: '신체 부위' + '성적인 시선' 표현이 같이 있으면 의심
+BODY = re.compile(r"몸매|핏이|가슴|엉덩|허벅지|다리|골반|라인|상의|하의|치마|옷이|옷 |쪽이")
+LEWD = re.compile(r"야해|야하|야한|꽉\s*차|터질|눈이\s*(감|가)|눈\s*돌아|눈을\s*못\s*떼|꼴리|꼴린|침\s*고|군침|만지고|벗기")
+
+
 def classify(text):
     text = SAFE.sub(" ", text)
     d = deob(text)
@@ -123,6 +128,9 @@ def classify(text):
     g, sl = GROUP.search(text), SLUR.search(text)
     if g and sl:
         hits.append((2, "혐오", f"집단 비하 의심 '{g[0]}'+'{sl[0]}'"))
+    b, l = BODY.search(text), LEWD.search(text)
+    if b and l:
+        hits.append((3, "성적", f"성희롱 의심 '{b[0].strip()}'+'{l[0]}'"))
     for c, s, w, p in PATS:
         if find(p, text):
             hits.append((s, c, f"키워드 '{w}'"))
@@ -163,7 +171,7 @@ def get(path, **params):
     return r.json()
 
 
-def fetch(vid, key, limit):
+def fetch(vid, key, limit, prog=lambda n: None):
     rows, raw, token = [], [], ""
     while len(rows) < limit:
         d = get("commentThreads", part="snippet,replies", videoId=vid, maxResults=100,
@@ -184,6 +192,7 @@ def fetch(vid, key, limit):
                     if not t:
                         break
             rows += [row(c, vid) for c in reps]
+        prog(len(rows))
         token = d.get("nextPageToken")
         if not token:
             break
@@ -287,45 +296,55 @@ def save(rows, raw, src, url="", vid="직접입력", imgs=()):
             if pr >= AI_CUT and r["label"] == "정상":
                 r.update(label="악플", severity=2 if pr >= 0.8 else 1, category="AI 판단",
                          reason=f"AI 악플 확률 {pr:.0%}")
-    st.session_state.d = dict(rows=rows, raw=raw, sha=hashlib.sha256(raw + b"".join(imgs)).hexdigest(),
+    st.session_state.res = dict(rows=rows, raw=raw, sha=hashlib.sha256(raw + b"".join(imgs)).hexdigest(),
                               at=datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), url=url, vid=vid,
                               src=src, imgs=list(imgs))
 
 
 # ---------- 화면 ----------
-st.set_page_config("악플 수집기", "🛡️")
-st.markdown("<style>[data-testid='stToolbar']{display:none}</style>", unsafe_allow_html=True)
+st.set_page_config("악플 수집기", "🛡️", layout="wide")
+st.markdown("""<style>[data-testid='stToolbar']{display:none}
+.block-container{max-width:1150px;padding-top:2.5rem}</style>""", unsafe_allow_html=True)
 st.title("🛡️ 악플 수집기")
-t1, t2 = st.tabs(["🔗 유튜브 링크", "📋 텍스트·스크린샷 (인스타·카톡 등)"])
+st.caption("유튜브 댓글이나 SNS 스크린샷에서 악플을 찾아내고, 고소에 쓸 수 있는 채증 보고서로 정리합니다.")
+for col, (h, b) in zip(st.columns(3), [("① 넣기", "유튜브 주소 또는 스크린샷·텍스트"),
+                                       ("② 자동 분류", "키워드 + 우회 표기 + AI 모델"),
+                                       ("③ 보고서 받기", "검토 후 Word 채증 보고서 다운로드")]):
+    col.container(border=True).markdown(f"**{h}**  \n{b}")
 
+t1, t2 = st.tabs(["🔗 유튜브 링크", "📋 텍스트·스크린샷 (인스타·카톡 등)"])
 with t1:
     try:
         key = st.secrets["YOUTUBE_API_KEY"]
     except Exception:
         key = st.text_input("YouTube API 키", type="password")
-    url = st.text_input("유튜브 영상 주소")
-    limit = st.slider("최대 수집 댓글 수", 100, 3000, 1000, 100)
-    if st.button("수집 시작", type="primary"):
+    a, b, c = st.columns([5, 3, 1.3], vertical_alignment="bottom")
+    url = a.text_input("유튜브 영상 주소", placeholder="https://youtu.be/...")
+    limit = b.number_input("최대 수집 댓글 수 (1만 개 ≈ 1~2분)", 100, 50000, 3000, 1000)
+    if c.button("수집 시작", type="primary"):
         vid = video_id(url)
         if not (vid and key):
             st.error("주소와 API 키를 확인하세요.")
             st.stop()
-        with st.spinner("수집·분류 중…"):
-            try:
-                rows, raw = fetch(vid, key, limit)
-            except Exception as e:
-                st.error(f"수집 실패: {e}")
-                st.stop()
-            save(rows, json.dumps(raw, ensure_ascii=False).encode(), "유튜브", url, vid)
+        bar = st.progress(0.0, "댓글 수집 중…")
+        try:
+            rows, raw = fetch(vid, key, limit, lambda n: bar.progress(min(n / limit, 1.0), f"댓글 {n:,}개 수집 중…"))
+        except Exception as e:
+            st.error(f"수집 실패: {e}")
+            st.stop()
+        bar.progress(1.0, "분류 중…")
+        save(rows, json.dumps(raw, ensure_ascii=False).encode(), "유튜브", url, vid)
+        bar.empty()
 
 with t2:
-    imgs = st.file_uploader("스크린샷 첨부 (여러 장 가능) — 글자를 자동으로 읽고, 사진은 보고서에 증거로 들어가요",
-                            type=["png", "jpg", "jpeg"], accept_multiple_files=True)
-    if imgs and st.button("사진에서 글자 읽기"):
+    a, b = st.columns(2)
+    imgs = a.file_uploader("스크린샷 첨부 (여러 장 가능 · 사진은 보고서에 증거로 들어가요)",
+                           type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+    if imgs and a.button("사진에서 글자 읽기"):
         with st.spinner("글자 읽는 중…"):
             st.session_state.txt = "\n".join(ocr(f.getvalue()) for f in imgs)
-    txt = st.text_area("댓글·메시지 (한 줄에 하나씩 · 잘못 읽힌 글자는 고쳐주세요)", key="txt", height=200)
-    if st.button("분류하기", type="primary"):
+    txt = b.text_area("댓글·메시지 (한 줄에 하나씩 · 잘못 읽힌 글자는 고쳐주세요)", key="txt", height=200)
+    if b.button("분류하기", type="primary"):
         lines = [l.strip() for l in txt.splitlines() if l.strip()]
         if not lines:
             st.error("내용을 붙여넣거나 사진에서 글자를 읽어주세요.")
@@ -333,18 +352,23 @@ with t2:
         rows = [dict(id=f"m{i}", author="", channel="", text=l, time="", link="") for i, l in enumerate(lines, 1)]
         save(rows, txt.encode(), "직접 입력", imgs=[f.getvalue() for f in imgs or []])
 
-if "d" in st.session_state:
-    d = st.session_state.d
+d = st.session_state.get("res")
+if d:
     df = pd.DataFrame(d["rows"])
     st.divider()
-    st.metric(f"악플 / 전체 ({d['src']})", f"{(df.label == '악플').sum()} / {len(df)}")
+    bad = df.label == "악플"
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("출처", d["src"])
+    m2.metric("전체", f"{len(df):,}")
+    m3.metric("악플 후보", f"{bad.sum():,}")
+    m4.metric("그중 AI가 찾은 것", f"{(df.category == 'AI 판단').sum():,}")
 
     # 필터: 보고 싶은 단어·유형만 골라보기 (악플이 아닌 댓글도 검색 가능)
-    f1, f2 = st.columns(2)
+    f1, f2, f3 = st.columns([1, 1.3, 2])
     scope = f1.radio("범위", ["악플만", "전체 댓글"], horizontal=True)
-    cats = f2.multiselect("유형", list(RULES))
-    q = st.text_input("검색어 (쉼표로 여러 개, 띄어쓰기·숫자 끼운 변형도 찾음)")
-    v = df if scope == "전체 댓글" else df[df.label == "악플"]
+    cats = f2.multiselect("유형", list(RULES) + ["AI 판단"], placeholder="전체")
+    q = f3.text_input("검색어 (쉼표로 여러 개, 띄어쓰기·숫자 끼운 변형도 찾음)")
+    v = df if scope == "전체 댓글" else df[bad]
     if cats:
         v = v[v["category"].apply(lambda c: any(x in c for x in cats)).astype(bool)]
     words = [w.strip() for w in q.split(",") if w.strip()]
@@ -352,13 +376,13 @@ if "d" in st.session_state:
         v = v[v["text"].apply(lambda t: any(pat(w).search(t) for w in words)).astype(bool)]
     v = v.sort_values("severity", ascending=False).copy()
     v.insert(0, "포함", v.label == "악플")
-    st.caption(f"{len(v)}개 표시 · 증거에 넣을 댓글을 체크하세요")
+    st.caption(f"{len(v):,}개 표시 · 증거에 넣을 댓글을 체크하세요")
     cols = ["포함", "severity", "category", "author", "text", "reason", "ai", "link"]
     if d["src"] != "유튜브":
         cols = ["포함", "severity", "category", "text", "reason", "ai"]
-    cols = [c for c in cols if c in v]
-    ed = st.data_editor(v[cols], hide_index=True,
-                        column_config={"severity": "심각도", "category": "유형", "author": "작성자", "text": "내용",
+    ed = st.data_editor(v[[c for c in cols if c in v]], hide_index=True,
+                        column_config={"severity": "심각도", "category": "유형", "author": "작성자",
+                                       "text": st.column_config.TextColumn("내용", width="large"),
                                        "reason": "판단 근거", "ai": "AI 점수(%)",
                                        "link": st.column_config.LinkColumn("원문", display_text="열기")})
     sel = df.loc[ed[ed["포함"]].index].to_dict("records")
@@ -366,7 +390,8 @@ if "d" in st.session_state:
         if c["label"] == "정상":
             c.update(category="사용자 선택", reason="검토자가 직접 선택" + (f" (검색어: {q})" if q else ""))
     c1, c2, c3 = st.columns(3)
-    c1.download_button("채증 보고서(Word)", report(sel, d, len(df)), f"채증_{d['vid']}.docx", disabled=not sel)
-    c2.download_button("전체 목록(CSV)", df.to_csv(index=False).encode("utf-8-sig"), f"목록_{d['vid']}.csv")
-    c3.download_button("원본 데이터", d["raw"], f"원본_{d['vid']}." + ("json" if d["src"] == "유튜브" else "txt"))
+    c1.download_button("📄 채증 보고서(Word)", report(sel, d, len(df)), f"채증_{d['vid']}.docx",
+                       disabled=not sel, type="primary")
+    c2.download_button("📊 전체 목록(CSV)", df.to_csv(index=False).encode("utf-8-sig"), f"목록_{d['vid']}.csv")
+    c3.download_button("🔒 원본 데이터", d["raw"], f"원본_{d['vid']}." + ("json" if d["src"] == "유튜브" else "txt"))
     st.caption(f"원본 SHA-256: {d['sha']}")
