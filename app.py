@@ -34,7 +34,7 @@ KEY = dict(zip("qwertasdfgzxcvyuiophjklbnmQWERTOP", "ㅂㅈㄷㄱㅅㅁㄴㅇㄹ
 VC = {"ㅗㅏ": "ㅘ", "ㅗㅐ": "ㅙ", "ㅗㅣ": "ㅚ", "ㅜㅓ": "ㅝ", "ㅜㅔ": "ㅞ", "ㅜㅣ": "ㅟ", "ㅡㅣ": "ㅢ"}
 ROMAN = {"ssi": "씨", "shi": "시", "si": "시", "c": "시", "bal": "발", "ppal": "빨", "byung": "병", "byeong": "병",
          "shin": "신", "sin": "신", "gae": "개", "sae": "새", "kki": "끼", "ji": "지", "ral": "랄", "jot": "좆"}
-TENSE = dict(zip("ㄲㄸㅃㅆㅉ", "ㄱㄷㅂㅅㅈ"))
+TENSE = dict(zip("ㄲㄸㅃㅆㅉㅋㅌㅊ", "ㄱㄷㅂㅅㅈㄱㄷㅈ"))  # 된소리·거센소리 → 예사소리
 VOW = dict(zip("ㅢㅟㅐㅙㅞㅚㅑㅘㅕㅝㅛㅠ", "ㅣㅣㅔㅔㅔㅔㅏㅏㅓㅓㅗㅜ"))
 
 
@@ -92,7 +92,7 @@ def phon(t):
     return out
 
 
-CORE = [(w, pat(phon(w))) for w in ["시발", "병신", "븅신", "지랄", "염병", "개새끼", "니애미"]]
+CORE = [(w, pat(phon(w))) for w in ["시발", "병신", "븅신", "지랄", "염병", "개새끼", "니애미", "틀딱"]]
 
 
 # 욕설과 글자가 겹치는 일반 표현 (검사 전에 지움)
@@ -200,17 +200,37 @@ def fetch(vid, key, limit, prog=lambda n: None):
 
 
 # ---------- 스크린샷 글자 읽기(OCR) ----------
+UI = re.compile(r"[답담][글굴]|좋아요|댓글순|추천 댓글|정렬 기준|싫어요|공유|신고|번역 보기|더보기|자세히 보기|\d+\s*(초|분|시간|일|주|개월|년)\s*전")
+
+
 def ocr(b):
+    """스크린샷 → 글자. 작은 글씨는 확대, 다크모드는 반전, 아이콘·버튼 줄은 버리고
+    '@아이디' 줄은 다음 줄의 작성자로 붙임 → [@아이디] 내용"""
     try:
         import pytesseract
         from PIL import Image, ImageOps, ImageStat
         im = ImageOps.grayscale(Image.open(io.BytesIO(b)))
-        if ImageStat.Stat(im).mean[0] < 128:  # 다크모드 화면이면 색 반전
+        if ImageStat.Stat(im).mean[0] < 128:
             im = ImageOps.invert(im)
+        k = max(1, min(3, 1400 / im.width))
+        im = im.resize((int(im.width * k), int(im.height * k)), Image.LANCZOS)
         t = pytesseract.image_to_string(im, lang="kor+eng", config="--psm 6")
     except Exception:
         return ""
-    return "\n".join(l.strip() for l in t.splitlines() if re.search(r"[가-힣A-Za-zㄱ-ㅣ]", l))
+    out, who = [], ""
+    for l in t.splitlines():
+        m = re.search(r"@[\w.\-가-힣]+", l)
+        if m:
+            who = m[0]
+            continue
+        if "선택됨" in l:
+            continue
+        l = UI.sub("", l).strip()
+        up = len(re.findall(r"[A-Z]", l)) / max(1, len(re.findall(r"[A-Za-z]", l)))
+        if len(re.findall(r"[가-힣ㄱ-ㅎ]", l)) >= 2 or (len(re.findall(r"[A-Za-z]{3,}", l)) >= 3 and up < 0.5):
+            out.append(f"[{who}] {l}" if who else l)
+            who = ""
+    return "\n".join(out)
 
 
 # ---------- 채증 보고서 ----------
@@ -349,7 +369,10 @@ with t2:
         if not lines:
             st.error("내용을 붙여넣거나 사진에서 글자를 읽어주세요.")
             st.stop()
-        rows = [dict(id=f"m{i}", author="", channel="", text=l, time="", link="") for i, l in enumerate(lines, 1)]
+        rows = []
+        for i, l in enumerate(lines, 1):
+            m = re.match(r"\[(@?[^\]]+)\]\s*(.*)", l)  # [@아이디] 내용 → 작성자 분리
+            rows.append(dict(id=f"m{i}", author=m[1] if m else "", channel="", text=m[2] if m else l, time="", link=""))
         save(rows, txt.encode(), "직접 입력", imgs=[f.getvalue() for f in imgs or []])
 
 d = st.session_state.get("res")
@@ -379,7 +402,7 @@ if d:
     st.caption(f"{len(v):,}개 표시 · 증거에 넣을 댓글을 체크하세요")
     cols = ["포함", "severity", "category", "author", "text", "reason", "ai", "link"]
     if d["src"] != "유튜브":
-        cols = ["포함", "severity", "category", "text", "reason", "ai"]
+        cols = ["포함", "severity", "category", "author", "text", "reason", "ai"]
     ed = st.data_editor(v[[c for c in cols if c in v]], hide_index=True,
                         column_config={"severity": "심각도", "category": "유형", "author": "작성자",
                                        "text": st.column_config.TextColumn("내용", width="large"),
