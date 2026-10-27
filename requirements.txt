@@ -1,5 +1,4 @@
-streamlit>=1.40
+streamlit
 requests
 pandas
-openpyxl
 python-docx
