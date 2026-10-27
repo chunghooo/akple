@@ -10,11 +10,11 @@ KST = timezone(timedelta(hours=9))
 # ---------- 키워드 (유형: (심각도, [단어])) ----------
 RULES = {
     "욕설": (3, ["시발", "씨발", "ㅅㅂ", "ㅆㅂ", "좆", "ㅈ같", "개새끼", "개색기", "새끼", "병신", "ㅂㅅ", "븅신",
-                 "지랄", "ㅈㄹ", "염병", "썅", "엠창", "느금", "니애미", "애미", "애비"]),
+                 "지랄", "ㅈㄹ", "염병", "썅", "엠창", "느금", "니애미", "애미", "애비", "18놈", "18새", "십팔놈"]),
     "비속어": (1, ["존나", "졸라", "ㅈㄴ"]),
     "위협": (3, ["죽어라", "뒤져", "뒤진다", "뒤질", "자살해", "죽여버", "찾아간다", "패버"]),
     "인신공격": (2, ["미친놈", "미친년", "또라이", "돌아이", "멍청", "찐따", "한심", "쓰레기", "못생", "정신병",
-                     "정병", "관종", "역겹", "꺼져", "닥쳐", "ㄲㅈ", "ㄷㅊ", "상태봐라", "꼬라지", "주제에"]),
+                     "정병", "관종", "역겹", "꺼져", "닥쳐", "ㄲㅈ", "ㄷㅊ", "상태봐라", "꼬라지", "주제에", "얼굴값", "꼴값"]),
     "혐오": (3, ["한남충", "한녀", "김치녀", "틀딱", "급식충", "잼민", "맘충", "짱깨", "쪽바리"]),
     "성적": (3, ["따먹", "몸매보"]),
 }
@@ -155,6 +155,7 @@ def video_id(url):
 def row(c, vid):
     s = c["snippet"]
     return dict(id=c["id"], author=s["authorDisplayName"], channel=s.get("authorChannelUrl", ""),
+                cid=s.get("authorChannelId", {}).get("value", ""),
                 text=s["textOriginal"], time=s["publishedAt"], link=f"https://youtu.be/{vid}?lc={c['id']}")
 
 
@@ -235,7 +236,11 @@ def ocr(b):
 
 # ---------- 채증 보고서 ----------
 def kst(t):
-    return datetime.fromisoformat(t.replace("Z", "+00:00")).astimezone(KST).strftime("%Y-%m-%d %H:%M") if t else ""
+    """작성 시각을 KST와 UTC로 같이 표기"""
+    if not t:
+        return ""
+    u = datetime.fromisoformat(t.replace("Z", "+00:00"))
+    return f'{u.astimezone(KST):%Y-%m-%d %H:%M:%S} KST ({u:%Y-%m-%d %H:%M:%S} UTC)'
 
 
 def report(sel, d, total):
@@ -257,13 +262,19 @@ def report(sel, d, total):
     yt = d["src"] == "유튜브"
     p("온라인 악성 댓글 채증 자료", 16, True)
     p("1. 수집 개요", 12, True)
-    table([("출처", d["src"]), ("영상 주소", d["url"]), ("수집 일시", d["at"] + " (KST)"),
-           ("수집 방법", "YouTube Data API v3 공식 API" if yt else "사용자 직접 입력·스크린샷 글자 인식"),
+    table([("출처", d["src"]), ("영상 주소", d["url"]), ("수집 일시", kst(d["at"])),
+           ("수집 방법", "Google YouTube Data API v3 공식 서버에 직접 요청하여 받은 응답을 가공 없이 원본(JSON)으로 "
+                       "저장하고, 그 원본에서 아래 내용을 추출함" if yt else "사용자 직접 입력·스크린샷 글자 인식"),
            ("전체 건수", total), ("증거 선별 수", len(sel))])
+    rep = pd.Series([c["author"] for c in sel if c["author"]]).value_counts()
+    if (rep >= 2).any():
+        p("반복 작성자 (2건 이상 — 지속성·악의성 입증 자료)", 11, True)
+        table([(a, f"{n}건") for a, n in rep[rep >= 2].items()])
     p("2. 악성 댓글 상세", 12, True)
     for i, c in enumerate(sel, 1):
         p(f"증거 {i}", 10, True)
-        table([("작성자", c["author"]), ("작성자 채널", c["channel"]), ("작성 일시", kst(c["time"])),
+        table([("작성자", c["author"]), ("채널 주소", c["channel"]), ("채널 고유 ID", c.get("cid", "")),
+               ("작성 일시", kst(c["time"])),
                ("내용", c["text"]), ("유형/심각도", f'{c["category"]} / {c["severity"]}'),
                ("판단 근거", c["reason"]), ("원문 링크", c["link"])])
     n = 3
@@ -317,7 +328,7 @@ def save(rows, raw, src, url="", vid="직접입력", imgs=()):
                 r.update(label="악플", severity=2 if pr >= 0.8 else 1, category="AI 판단",
                          reason=f"AI 악플 확률 {pr:.0%}")
     st.session_state.res = dict(rows=rows, raw=raw, sha=hashlib.sha256(raw + b"".join(imgs)).hexdigest(),
-                              at=datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), url=url, vid=vid,
+                              at=datetime.now(timezone.utc).isoformat(), url=url, vid=vid,
                               src=src, imgs=list(imgs))
 
 
@@ -385,6 +396,16 @@ if d:
     m2.metric("전체", f"{len(df):,}")
     m3.metric("악플 후보", f"{bad.sum():,}")
     m4.metric("그중 AI가 찾은 것", f"{(df.category == 'AI 판단').sum():,}")
+    rep = df[bad & (df.author != "")].author.value_counts()
+    if (rep >= 2).any():
+        st.warning("🚨 반복 작성자: " + ", ".join(f"{a} ({n}건)" for a, n in rep[rep >= 2].head(5).items()))
+    if bad.any():
+        g1, g2 = st.columns(2)
+        g1.caption("유형별 악플 수")
+        g1.bar_chart(df[bad].category.str.split(", ").explode().value_counts())
+        if (df.time != "").any():
+            g2.caption("날짜별 악플 수")
+            g2.line_chart(pd.to_datetime(df[bad].time).dt.tz_convert("Asia/Seoul").dt.date.value_counts().sort_index())
 
     # 필터: 보고 싶은 단어·유형만 골라보기 (악플이 아닌 댓글도 검색 가능)
     f1, f2, f3 = st.columns([1, 1.3, 2])
