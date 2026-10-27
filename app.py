@@ -9,11 +9,12 @@ KST = timezone(timedelta(hours=9))
 
 # ---------- 키워드 (유형: (심각도, [단어])) ----------
 RULES = {
-    "욕설": (3, ["시발", "씨발", "ㅅㅂ", "ㅆㅂ", "좆", "ㅈ같", "개새끼", "개색기", "새끼", "병신", "ㅂㅅ", "븅신",
+    "욕설": (3, ["시발", "씨발", "ㅅㅂ", "ㅆㅂ", "좆", "ㅈ같", "x같", "개새끼", "개색기", "새끼", "병신", "ㅂㅅ", "븅신",
                  "지랄", "ㅈㄹ", "염병", "썅", "엠창", "느금", "니애미", "애미", "애비", "18놈", "18새", "십팔놈"]),
-    "비속어": (1, ["존나", "졸라", "ㅈㄴ"]),
+    "비속어": (1, ["존나", "졸라", "ㅈㄴ", "개같"]),
+    "비난": (1, ["악마", "꼴보기", "퉤", "ㅉㅉ", "존망", "토할", "와꾸", "뇬", "가증"]),
     "위협": (3, ["죽어라", "뒤져", "뒤진다", "뒤질", "자살해", "죽여버", "찾아간다", "패버"]),
-    "인신공격": (2, ["미친놈", "미친년", "또라이", "돌아이", "멍청", "찐따", "한심", "쓰레기", "못생", "정신병",
+    "인신공격": (2, ["미친놈", "미친년", "또라이", "돌아이", "멍청", "찐따", "한심", "쓰레기", "못생", "정신병자", "싸이코패스", "사이코패스", "양아치", "인간같지", "인간이냐", "금수", "모자란",
                      "정병", "관종", "역겹", "꺼져", "닥쳐", "ㄲㅈ", "ㄷㅊ", "상태봐라", "꼬라지", "주제에", "얼굴값", "꼴값"]),
     "혐오": (3, ["한남충", "한녀", "김치녀", "틀딱", "급식충", "잼민", "맘충", "짱깨", "쪽바리"]),
     "성적": (3, ["따먹", "몸매보"]),
@@ -22,7 +23,7 @@ SEP = r"[\s\d._*~!^♡♥,·ㅇㅋㅎㅡ-]*"  # 끼워넣은 숫자·기호·ㅇ
 
 
 def pat(w):
-    return re.compile(SEP.join(map(re.escape, w)))
+    return re.compile(SEP.join(map(re.escape, w)), re.I)
 
 
 PATS = [(c, s, w, pat(w)) for c, (s, ws) in RULES.items() for w in ws]
@@ -324,7 +325,9 @@ def save(rows, raw, src, url="", vid="직접입력", imgs=()):
     if vm and rows:
         for r, pr in zip(rows, vm[1].predict_proba(vm[0].transform([r["text"] for r in rows]))[:, 1]):
             r["ai"] = round(pr * 100)
-            if pr >= AI_CUT and r["label"] == "정상":
+            # 글자 2개 미만이거나 자음·모음 낙서(ㅓ버바펴…)가 더 많은 댓글은 AI 판단 제외 (오탐 방지)
+            syl, jamo = len(re.findall("[가-힣]", r["text"])), len(re.findall("[ㄱ-ㅣ]", r["text"]))
+            if pr >= AI_CUT and r["label"] == "정상" and syl >= 2 and jamo <= syl:
                 r.update(label="악플", severity=2 if pr >= 0.8 else 1, category="AI 판단",
                          reason=f"AI 악플 확률 {pr:.0%}")
     st.session_state.res = dict(rows=rows, raw=raw, sha=hashlib.sha256(raw + b"".join(imgs)).hexdigest(),
@@ -396,16 +399,20 @@ if d:
     m2.metric("전체", f"{len(df):,}")
     m3.metric("악플 후보", f"{bad.sum():,}")
     m4.metric("그중 AI가 찾은 것", f"{(df.category == 'AI 판단').sum():,}")
-    rep = df[bad & (df.author != "")].author.value_counts()
-    if (rep >= 2).any():
-        st.warning("🚨 반복 작성자: " + ", ".join(f"{a} ({n}건)" for a, n in rep[rep >= 2].head(5).items()))
     if bad.any():
-        g1, g2 = st.columns(2)
-        g1.caption("유형별 악플 수")
-        g1.bar_chart(df[bad].category.str.split(", ").explode().value_counts())
-        if (df.time != "").any():
-            g2.caption("날짜별 악플 수")
-            g2.line_chart(pd.to_datetime(df[bad].time).dt.tz_convert("Asia/Seoul").dt.date.value_counts().sort_index())
+        with st.expander("📊 악플 현황 (유형 분석 · 상습 작성자)", expanded=True):
+            g1, g2 = st.columns(2)
+            g1.markdown("**유형별 악플 수**")
+            g1.bar_chart(df[bad].category.str.split(", ").explode().value_counts(), color="#FF4B4B")
+            g2.markdown("**상습 작성자 Top 5** (2건 이상 = 지속성 입증 자료)")
+            rep = df[bad & (df.author != "")].author.value_counts().head(5).rename_axis("작성자").reset_index(name="악플 수")
+            if len(rep):
+                g2.dataframe(rep, hide_index=True)
+            else:
+                g2.caption("작성자 정보가 없어 집계할 수 없어요.")
+            if (df.time != "").any():
+                st.markdown("**날짜별 악플 수**")
+                st.line_chart(pd.to_datetime(df[bad].time).dt.tz_convert("Asia/Seoul").dt.date.value_counts().sort_index())
 
     # 필터: 보고 싶은 단어·유형만 골라보기 (악플이 아닌 댓글도 검색 가능)
     f1, f2, f3 = st.columns([1, 1.3, 2])
@@ -419,8 +426,8 @@ if d:
     if words:
         v = v[v["text"].apply(lambda t: any(pat(w).search(t) for w in words)).astype(bool)]
     v = v.sort_values("severity", ascending=False).copy()
-    v.insert(0, "포함", v.label == "악플")
-    st.caption(f"{len(v):,}개 표시 · 증거에 넣을 댓글을 체크하세요")
+    v.insert(0, "포함", (v.label == "악플") & (v.severity >= 2))  # 애매한 것(심각도 1)은 기본 체크 해제
+    st.caption(f"{len(v):,}개 표시 · 심각도 1 = 애매함(체크 해제됨, 직접 판단) · 2 = 명백한 모욕 · 3 = 심각(욕설·위협·혐오·성희롱)")
     cols = ["포함", "severity", "category", "author", "text", "reason", "ai", "link"]
     if d["src"] != "유튜브":
         cols = ["포함", "severity", "category", "author", "text", "reason", "ai"]
