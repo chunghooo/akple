@@ -10,14 +10,14 @@ KST = timezone(timedelta(hours=9))
 # ---------- 키워드 (유형: (심각도, [단어])) ----------
 RULES = {
     "욕설": (3, ["시발", "씨발", "ㅅㅂ", "ㅆㅂ", "좆", "ㅈ같", "x같", "개새끼", "개색기", "새끼", "병신", "ㅂㅅ", "븅신",
-                 "지랄", "ㅈㄹ", "염병", "썅", "엠창", "느금", "니애미", "애미", "애비", "18놈", "18새", "십팔놈"]),
-    "비속어": (1, ["존나", "졸라", "ㅈㄴ", "개같"]),
-    "비난": (1, ["악마", "꼴보기", "퉤", "ㅉㅉ", "존망", "토할", "와꾸", "뇬", "가증"]),
-    "위협": (3, ["죽어라", "뒤져", "뒤진다", "뒤질", "자살해", "죽여버", "찾아간다", "패버"]),
+                 "지랄", "ㅈㄹ", "염병", "썅", "엠창", "느금", "니애미", "애미", "애비", "18놈", "18새", "십팔놈", "씹새", "장애새끼", "장애냐", "고아새끼", "고아냐"]),
+    "비속어": (1, ["존나", "졸라", "ㅈㄴ", "개같", "뒤진다", "뒤질"]),
+    "비난": (1, ["악마", "꼴보기", "퉤", "ㅉㅉ", "존망", "토할", "와꾸", "뇬", "가증", "무지성", "발작버튼", "누칼협", "알빠노", "긁혔", "뇌절", "벌레같", "관종"]),
+    "위협": (3, ["죽어라", "뒤져라", "자살해", "죽여버", "찾아간다", "패버"]),
     "인신공격": (2, ["미친놈", "미친년", "또라이", "돌아이", "멍청", "찐따", "한심", "쓰레기", "못생", "정신병자", "싸이코패스", "사이코패스", "양아치", "인간같지", "인간이냐", "금수", "모자란",
-                     "정병", "관종", "역겹", "꺼져", "닥쳐", "ㄲㅈ", "ㄷㅊ", "상태봐라", "꼬라지", "주제에", "얼굴값", "꼴값"]),
-    "혐오": (3, ["한남충", "한녀", "김치녀", "틀딱", "급식충", "잼민", "맘충", "짱깨", "쪽바리"]),
-    "성적": (3, ["따먹", "몸매보"]),
+                     "정병", "역겹", "꺼져", "닥쳐", "ㄲㅈ", "ㄷㅊ", "상태봐라", "꼬라지", "주제에", "얼굴값", "꼴값", "능지", "뇌빼고", "쿨찐", "방구석여포", "호소인"]),
+    "혐오": (3, ["한남충", "한녀", "김치녀", "틀딱", "급식충", "잼민", "맘충", "짱깨", "쪽바리", "스윗한남", "퐁퐁남", "설거지론", "영포티", "오팔륙", "군캉스"]),
+    "성적": (3, ["따먹", "몸매보", "ㅗㅜㅑ", "눈요기", "육덕", "헤응", "스폰녀", "오피녀", "조건만남"]),
 }
 SEP = r"[\s\d._*~!^♡♥,·ㅇㅋㅎㅡ-]*"  # 끼워넣은 숫자·기호·ㅇㅋㅎ 건너뜀
 
@@ -97,7 +97,10 @@ CORE = [(w, pat(phon(w))) for w in ["시발", "병신", "븅신", "지랄", "염
 
 
 # 욕설과 글자가 겹치는 일반 표현 (검사 전에 지움)
-SAFE = re.compile(r"새끼\s*(고양이|강아지|손가락|발가락|돼지|새|곰|오리)|쓰레기\s*(분리|봉투|줍|처리|매립|배출|소각)|분리수거")
+SAFE = re.compile(r"새끼\s*(고양이|강아지|손가락|발가락|돼지|새|곰|오리)|쓰레기\s*(분리|봉투|줍|처리|매립|배출|소각|통)|분리수거|"
+                  r"시발(점|역|택시|자동차)|병신(년|정변|박해|양요)|애비뉴|썅썅바|금수(저|강산)|능지처참|장애물|정신병원|"
+                  r"(땅|딸기|사과|과일|열매|감|귤)\s*따먹|(불|전원|화면|촛불|조명|전기|폰|컴퓨터)[이가]?\s*꺼져|"
+                  r"(위기|위험|재난|불행|겨울|추위|시련|운명)[이가]?\s*닥쳐|(잠|시간|돈|용량|공간|일손|인력|재료)[이가]?\s*모자란|주제에\s*(대해|관해|맞)")
 
 
 def find(p, t):
@@ -111,9 +114,9 @@ def find(p, t):
 
 
 # 욕 없이 돌려 까는 집단 비하: '집단을 가리키는 말' + '깎아내리는 일반화'가 한 댓글에 같이 있으면 의심
-GROUP = re.compile(r"성별|여자들|남자들|여자는|남자는|지역|출신|도민|지방|사투리|외국인|조선족|흑인|백인|동남아|장애|노인|틀니|"
+GROUP = re.compile(r"성별|여자|남자|여초|남초|지역|출신|도민|지방|사투리|외국인|조선족|흑인|백인|동남아|장애|노인|틀니|"
                    r"전라|경상|충청|강원|제주|홍어|과메기|[가-힣o○]{1,2}도\s*(사람|출신|것들)")
-SLUR = re.compile(r"과학이|걸러야|거르|지능|미개|종특|원래 그렇|답이 없|일반인이랑\s*다|정상인이랑\s*다|수준\s*(잘\s*)?보|"
+SLUR = re.compile(r"(?<=[가-힣])특(?![가-힣])|과학이|걸러야|거르|지능|미개|종특|원래 그렇|답이 없|일반인이랑\s*다|정상인이랑\s*다|수준\s*(잘\s*)?보|"
                   r"(통계|팩트)로?\s*(증명|확인)|역시\s*\S*(들|것들)은|하는 짓")
 
 
@@ -122,13 +125,63 @@ BODY = re.compile(r"몸매|핏이|가슴|엉덩|허벅지|다리|골반|라인|�
 LEWD = re.compile(r"야해|야하|야한|꽉\s*차|터질|눈이\s*(감|가)|눈\s*돌아|눈을\s*못\s*떼|꼴리|꼴린|침\s*고|군침|만지고|벗기")
 
 
+# 구체적 사실 주장(갑질·범죄 등) → 사실이든 거짓이든 명예훼손 검토 대상
+FACT = re.compile(r"갑질|사기|횡령|탈세|불륜|바람피|전과|범죄자|폭행|성추행|성폭행|마약|도박|체불|떼먹|학폭|"
+                  r"뒷광고|표절|조작|주작|거짓말쟁이|했다더라|했대|라던데|카더라")
+
+# 유형 → (법적 검토, 관련 조항). 참고용이며 최종 판단은 수사기관·법원
+LAW = {"욕설": ("모욕 의심", "형법 제311조(모욕)"), "비속어": ("모욕 의심", "형법 제311조(모욕)"),
+       "인신공격": ("모욕 의심", "형법 제311조(모욕)"), "비난": ("모욕 의심", "형법 제311조(모욕)"),
+       "위협": ("협박 의심", "형법 제283조(협박)"),
+       "성적": ("성희롱·모욕 의심", "형법 제311조(모욕), DM이면 성폭력처벌법 제13조(통신매체이용음란)"),
+       "명예훼손": ("명예훼손 검토", "정보통신망법 제70조(사실 1항·허위 2항)"),
+       "혐오": ("집단 비하(개인 특정 어려우면 고소 어려움)", "개인이 특정되면 형법 제311조(모욕)"),
+       "AI 판단": ("검토 필요", ""), "사용자 선택": ("검토 필요", "")}
+
+
+def law(category):
+    ls = [LAW.get(c.strip(), ("검토 필요", "")) for c in category.split(",") if c.strip()]
+    return dict(law=", ".join(dict.fromkeys(a for a, _ in ls)), statute=" / ".join(dict.fromkeys(b for _, b in ls if b)))
+
+
+CHUNG = re.compile(r"[가-힣]{1,4}충(?=들|이|아|[^가-힣]|$)")  # ~충 (멸칭)
+CHUNG_OK = ("보충", "확충", "해충", "곤충", "유충", "성충", "회충", "구충", "방충", "살충", "완충", "절충", "충충", "기생충 영화")
+HANNAM = re.compile(r"한남(?![자쪽동대산부오])")
+
+
+def norm(t):
+    """늘여 쓰기·숫자 치환 되돌리기: 씨이이이발→씨발, 10새→씹새, 18놈→씨발놈"""
+    out = ""
+    for ch in t:
+        n, p = ord(ch) - 0xAC00, (ord(out[-1]) - 0xAC00) if out else -1
+        # 받침 없는 글자 뒤 'ㅇ+같은 모음'은 늘여 쓰기 → 지움, 받침이 있으면 앞 글자로 합침 (씨이이발→씨발, 병시이인→병신)
+        if 0 <= n < 11172 and 0 <= p < 11172 and p % 28 == 0 and n // 588 == 11 and n % 588 // 28 == p % 588 // 28:
+            if n % 28:
+                out = out[:-1] + chr(0xAC00 + p + n % 28)
+            continue
+        out += ch
+    out = re.sub(r"(.)\1{2,}", r"\1", out)  # 같은 글자 3번 이상 → 1번
+    out = re.sub(r"(?<!\d)18(?=[놈년새아])", "씨발", out)
+    return re.sub(r"(?<!\d)10(?=[새쉐색])", "씹", out)
+
+
+YOU = re.compile(r"(^|[^가-힣])(너|니|넌|널|네가|님|당신|얘|쟤|느그|니들|너네|너희|이\s*새끼|이\s*놈)([^가-힣]|$|[가는도를랑])")
+SELF = re.compile(r"(^|[^가-힣])(나|내|난|날|저|제|전|우리)([^가-힣]|$|[가는도를의])|내\s*자신|탈출")
+POS = re.compile(r"맛있|맛도리|좋다|좋네|좋아|웃기|웃김|웃겨|재밌|재미있|귀엽|귀여|예쁘|이쁘|멋있|멋지|최고|사랑|감동|레전드|대박|쩐다|잘한다|잘하네")
+
+
 def classify(text):
-    text = SAFE.sub(" ", text)
+    text = norm(SAFE.sub(" ", text))
     d = deob(text)
     hits = []
+    ch = [m[0] for m in CHUNG.finditer(text) if not any(m[0].endswith(x) or x in text for x in CHUNG_OK)]
+    if ch:
+        hits.append((3, "혐오", f"멸칭 '{ch[0]}'"))
+    if HANNAM.search(text):
+        hits.append((3, "혐오", "키워드 '한남'"))
     g, sl = GROUP.search(text), SLUR.search(text)
     if g and sl:
-        hits.append((2, "혐오", f"집단 비하 의심 '{g[0]}'+'{sl[0]}'"))
+        hits.append((1, "혐오", f"집단 비하 의심 '{g[0]}'+'{sl[0]}'"))
     b, l = BODY.search(text), LEWD.search(text)
     if b and l:
         hits.append((3, "성적", f"성희롱 의심 '{b[0].strip()}'+'{l[0]}'"))
@@ -140,11 +193,17 @@ def classify(text):
     if not hits:
         ph = phon(d)
         hits = [(3, "욕설", f"발음 변형 '{w}'") for w, p in CORE if find(p, ph)][:1]
+    f = FACT.search(text)
+    if f:
+        hits.append((1, "명예훼손", f"사실 주장 '{f[0]}'(진위 확인 필요)"))
     if not hits:
-        return dict(label="정상", severity=0, category="", reason="")
+        return dict(label="정상", severity=0, category="", reason="", law="", statute="")
     hits.sort(reverse=True)
-    return dict(label="악플", severity=hits[0][0], category=", ".join(dict.fromkeys(h[1] for h in hits)),
-                reason=", ".join(dict.fromkeys(h[2] for h in hits)))
+    if not YOU.search(text) and (SELF.search(text) or POS.search(text)) and hits[0][1] not in ("위협", "성적"):
+        hits = [(1, c, r) for _, c, r in hits] + [(1, hits[0][1], "자기 비하·좋은 뜻 표현일 수 있음")]
+    cat = ", ".join(dict.fromkeys(h[1] for h in hits))
+    return dict(label="악플", severity=hits[0][0], category=cat,
+                reason=", ".join(dict.fromkeys(h[2] for h in hits)), **law(cat))
 
 
 # ---------- 유튜브 수집 ----------
@@ -271,12 +330,20 @@ def report(sel, d, total):
     if (rep >= 2).any():
         p("반복 작성자 (2건 이상 — 지속성·악의성 입증 자료)", 11, True)
         table([(a, f"{n}건") for a, n in rep[rep >= 2].items()])
+    p("고소 전 확인 사항", 11, True)
+    for t in ["□ 공연성: 여러 사람이 볼 수 있는 공개 댓글인가 (비공개·검토 대기 댓글은 약함)",
+              "□ 특정성: 댓글이 고소인을 가리킨다는 것을 알 수 있는가 (영상 속 인물 = 고소인 등)",
+              "□ 고소 기간: 모욕죄는 범인을 안 날부터 6개월 이내 고소해야 함 (친고죄)",
+              "□ 명예훼손 검토 항목은 해당 주장이 사실인지 거짓인지 구분하여 진술"]:
+        p(t, 9)
+    p("※ 아래 '법적 검토' 항목은 표현 유형에 따른 참고 분류이며 법률 자문이 아님", 9)
     p("2. 악성 댓글 상세", 12, True)
     for i, c in enumerate(sel, 1):
         p(f"증거 {i}", 10, True)
         table([("작성자", c["author"]), ("채널 주소", c["channel"]), ("채널 고유 ID", c.get("cid", "")),
                ("작성 일시", kst(c["time"])),
                ("내용", c["text"]), ("유형/심각도", f'{c["category"]} / {c["severity"]}'),
+               ("법적 검토", c.get("law", "")), ("관련 조항", c.get("statute", "")),
                ("판단 근거", c["reason"]), ("원문 링크", c["link"])])
     n = 3
     if d["imgs"]:
@@ -329,7 +396,7 @@ def save(rows, raw, src, url="", vid="직접입력", imgs=()):
             syl, jamo = len(re.findall("[가-힣]", r["text"])), len(re.findall("[ㄱ-ㅣ]", r["text"]))
             if pr >= AI_CUT and r["label"] == "정상" and syl >= 2 and jamo <= syl:
                 r.update(label="악플", severity=2 if pr >= 0.8 else 1, category="AI 판단",
-                         reason=f"AI 악플 확률 {pr:.0%}")
+                         reason=f"AI 악플 확률 {pr:.0%}", **law("AI 판단"))
     st.session_state.res = dict(rows=rows, raw=raw, sha=hashlib.sha256(raw + b"".join(imgs)).hexdigest(),
                               at=datetime.now(timezone.utc).isoformat(), url=url, vid=vid,
                               src=src, imgs=list(imgs))
@@ -417,7 +484,7 @@ if d:
     # 필터: 보고 싶은 단어·유형만 골라보기 (악플이 아닌 댓글도 검색 가능)
     f1, f2, f3 = st.columns([1, 1.3, 2])
     scope = f1.radio("범위", ["악플만", "전체 댓글"], horizontal=True)
-    cats = f2.multiselect("유형", list(RULES) + ["AI 판단"], placeholder="전체")
+    cats = f2.multiselect("유형", list(RULES) + ["명예훼손", "AI 판단"], placeholder="전체")
     q = f3.text_input("검색어 (쉼표로 여러 개, 띄어쓰기·숫자 끼운 변형도 찾음)")
     v = df if scope == "전체 댓글" else df[bad]
     if cats:
@@ -428,18 +495,19 @@ if d:
     v = v.sort_values("severity", ascending=False).copy()
     v.insert(0, "포함", (v.label == "악플") & (v.severity >= 2))  # 애매한 것(심각도 1)은 기본 체크 해제
     st.caption(f"{len(v):,}개 표시 · 심각도 1 = 애매함(체크 해제됨, 직접 판단) · 2 = 명백한 모욕 · 3 = 심각(욕설·위협·혐오·성희롱)")
-    cols = ["포함", "severity", "category", "author", "text", "reason", "ai", "link"]
+    cols = ["포함", "severity", "law", "author", "text", "reason", "ai", "link"]
     if d["src"] != "유튜브":
-        cols = ["포함", "severity", "category", "author", "text", "reason", "ai"]
+        cols = ["포함", "severity", "law", "author", "text", "reason", "ai"]
     ed = st.data_editor(v[[c for c in cols if c in v]], hide_index=True,
-                        column_config={"severity": "심각도", "category": "유형", "author": "작성자",
+                        column_config={"severity": "심각도", "law": "법적 검토", "author": "작성자",
                                        "text": st.column_config.TextColumn("내용", width="large"),
                                        "reason": "판단 근거", "ai": "AI 점수(%)",
                                        "link": st.column_config.LinkColumn("원문", display_text="열기")})
     sel = df.loc[ed[ed["포함"]].index].to_dict("records")
     for c in sel:
         if c["label"] == "정상":
-            c.update(category="사용자 선택", reason="검토자가 직접 선택" + (f" (검색어: {q})" if q else ""))
+            c.update(category="사용자 선택", reason="검토자가 직접 선택" + (f" (검색어: {q})" if q else ""),
+                     **law("사용자 선택"))
     c1, c2, c3 = st.columns(3)
     c1.download_button("📄 채증 보고서(Word)", report(sel, d, len(df)), f"채증_{d['vid']}.docx",
                        disabled=not sel, type="primary")
