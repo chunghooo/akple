@@ -405,7 +405,7 @@ def report(sel, d, case, total):
     el += kv([("보고서 생성일", datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S KST")),
               ("사건명", case.get("title") or "온라인 댓글 관련 증거 정리"),
               ("고소인(선택)", case.get("name") or "미기재"), ("연락처(선택)", case.get("contact") or "미기재"),
-              ("피해 기간", case.get("period") or "미기재"), ("플랫폼 / 게시물 URL", f"{d['src']} / {case.get('url') or d['url']}"),
+              ("피해 기간", case.get("period") or (f"미기재 (참고: 선택 댓글 작성일 {case['auto']})" if case.get("auto") else "미기재")), ("플랫폼 / 게시물 URL", f"{d['src']} / {case.get('url') or d['url']}"),
               ("수집 일시", kst(d["at"])),
               ("수집 방법", "Google YouTube Data API v3 공식 서버 응답을 가공 없이 원본(JSON)으로 저장하고 그 원본에서 추출"
                if yt else "사용자 직접 입력·스크린샷 글자 인식(작성자·시각은 원본 화면으로 확인 필요)"),
@@ -609,6 +609,7 @@ with t2:
 d = st.session_state.get("res")
 if d:
     df = pd.DataFrame(d["rows"])
+    df["when"] = pd.to_datetime(df.time, errors="coerce", utc=True).dt.tz_convert("Asia/Seoul")
     st.divider()
     bad = df.label == "악플"
     m1, m2, m3, m4 = st.columns(4)
@@ -616,8 +617,10 @@ if d:
     m2.metric("전체", f"{len(df):,}")
     m3.metric("악플 후보", f"{bad.sum():,}")
     m4.metric("그중 AI가 찾은 것", f"{(df.category == 'AI 판단').sum():,}")
-    if bad.any():
-        with st.expander("📊 악플 현황 (유형 분석 · 상습 작성자)", expanded=True):
+    with st.expander("📊 악플 현황 (유형 · 상습 작성자 · 날짜별 추이)", expanded=True):
+        if not bad.any():
+            st.caption("악플 후보가 없어요.")
+        else:
             g1, g2 = st.columns(2)
             g1.markdown("**유형별 악플 수**")
             g1.bar_chart(df[bad].category.str.split(", ").explode().value_counts(), color="#FF4B4B")
@@ -631,9 +634,11 @@ if d:
             if (dup >= 3).any():
                 st.warning("📋 같은 내용 반복 — 도배·조직적 공격 의심: " +
                            ", ".join(f"'{t[:20]}' {n}건" for t, n in dup[dup >= 3].head(3).items()))
-            if (df.time != "").any():
-                st.markdown("**날짜별 악플 수**")
-                st.line_chart(pd.to_datetime(df[bad].time).dt.tz_convert("Asia/Seoul").dt.date.value_counts().sort_index())
+            if df.when.notna().any():
+                st.markdown("**날짜별 댓글 수 (전체 vs 악플 후보)** — 피해 기간 확인용")
+                st.bar_chart(pd.DataFrame({"전체": df.when.dt.date.value_counts(),
+                                           "악플 후보": df[bad].when.dt.date.value_counts()}).fillna(0).sort_index(),
+                             color=["#C9D1DC", "#FF4B4B"], stack=False)
 
     # ---------- 2차 재검토 (Gemini) — 사용량 절약: 범위 선택 + 같은 내용 1번만 + 검토한 건 캐시 ----------
     ai_ = df.get("ai", pd.Series(0, index=df.index)).fillna(0)
@@ -642,8 +647,8 @@ if d:
         gkey = st.secrets["GEMINI_API_KEY"]
     except Exception:
         gkey = ""
-    with st.container(border=True):
-        st.markdown("**🤖 생성형 AI 2차 검토** — Gemini가 문맥으로 다시 판단해요. 악플이 아니라고 보면 선택이 풀려요 (참고용)")
+    with st.expander("🤖 생성형 AI 2차 검토 (Gemini)", expanded=False):
+        st.caption("Gemini가 문맥으로 다시 판단해요. 악플이 아니라고 보면 선택이 풀려요 (참고용)")
         a, b, c = st.columns([2.2, 2, 1], vertical_alignment="bottom")
         mode = a.radio("검토 범위", ["애매한 것만 (절약)", "악플 후보 전부 (정밀)"], horizontal=True)
         tgt = df[doubt] if mode.startswith("애매") else df[(df.label == "악플") | doubt]
@@ -675,12 +680,16 @@ if d:
             st.caption("GEMINI_API_KEY가 설정되지 않아 사용할 수 없어요.")
 
     # ---------- 필터 + 선택 (선택은 댓글 ID로 기억 → 필터를 바꿔도 유지) ----------
-    f1, f2, f3 = st.columns([1, 1.3, 2])
+    f1, f2, f3, f4 = st.columns([1.2, 1.2, 1.6, 1.4])
     scope = f1.radio("범위", ["악플만", "전체 댓글", "선택한 것만"], horizontal=True)
     cats = f2.multiselect("유형", list(RULES) + ["명예훼손", "신상노출", "AI 판단"], placeholder="전체")
-    q = f3.text_input("검색어 (쉼표로 여러 개, 띄어쓰기·숫자 끼운 변형도 찾음)")
+    q = f3.text_input("검색어 (쉼표로 여러 개, 변형도 찾음)")
+    days = df.when.dropna().dt.date
+    rng = f4.date_input("작성 날짜", (days.min(), days.max()), days.min(), days.max()) if len(days) else ()
     sel_ids, memo = st.session_state.sel, st.session_state.memo
     v = {"전체 댓글": df, "악플만": df[bad], "선택한 것만": df[df.id.isin(sel_ids)]}[scope]
+    if len(rng) == 2:
+        v = v[v.when.dt.date.between(*rng) | v.when.isna()]
     if cats:
         v = v[v["category"].apply(lambda c: any(x in c for x in cats)).astype(bool)]
     words = [w.strip() for w in q.split(",") if w.strip()]
@@ -689,13 +698,14 @@ if d:
     v = v.sort_values("severity", ascending=False).copy()
     v.insert(0, "포함", v.id.isin(sel_ids))
     v["memo"] = v.id.map(memo).fillna("")
+    v["when"] = v.when.dt.strftime("%Y-%m-%d %H:%M").fillna("")
     st.caption(f"{len(v):,}개 표시 · ✅ 현재 선택 {len(sel_ids)}건 · 심각도 1 = 애매함(직접 판단) · 2 = 명백한 모욕 · 3 = 심각")
-    cols = ["포함", "severity", "law", "target", "author", "text", "memo", "reason", "ai", "gem", "link"]
+    cols = ["포함", "severity", "law", "target", "author", "when", "text", "memo", "reason", "ai", "gem", "link"]
     if d["src"] != "유튜브":
         cols.remove("link")
-    ed = st.data_editor(v[[c for c in cols if c in v]], hide_index=True, key=f"ed{st.session_state.ver}{scope}{cats}{q}",
+    ed = st.data_editor(v[[c for c in cols if c in v]], hide_index=True, key=f"ed{st.session_state.ver}{scope}{cats}{q}{rng}",
                         disabled=[c for c in cols if c not in ("포함", "memo")],
-                        column_config={"severity": "심각도", "law": "법적 검토", "target": "지목", "author": "작성자",
+                        column_config={"severity": "심각도", "law": "법적 검토", "target": "지목", "author": "작성자", "when": "작성 시각(KST)",
                                        "text": st.column_config.TextColumn("내용", width="large"), "memo": "메모(보고서에 들어감)",
                                        "reason": "판단 근거", "ai": "AI 점수(%)", "gem": "생성형 AI 의견",
                                        "link": st.column_config.LinkColumn("원문", display_text="열기")})
@@ -714,18 +724,20 @@ if d:
             c.update(category="사용자 선택", reason="검토자가 직접 선택", **law("사용자 선택"))
 
     # ---------- 사건 정보 입력 → 미리보기 → PDF ----------
-    st.subheader(f"📝 증거 보고서 만들기 (선택 {len(sel)}건)")
-    k1, k2 = st.columns(2)
+    sd = sorted(kst(c["time"])[:10] for c in sel if c.get("time"))
+    auto = f"{sd[0]} ~ {sd[-1]}" if sd else ""
+    box = st.expander(f"📝 증거 보고서 만들기 (선택 {len(sel)}건)", expanded=True)
+    k1, k2 = box.columns(2)
     case = dict(title=k1.text_input("사건명", placeholder="미입력 시 '온라인 댓글 관련 증거 정리'"),
-                period=k2.text_input("피해 기간", placeholder="예: 2026-10-20 ~ 2026-10-27"),
+                period=k2.text_input("피해 기간 (비우면 선택 댓글 날짜를 참고로 표기)", placeholder=auto or "예: 2026-10-20 ~ 2026-10-27"),
                 url=k1.text_input("게시물 URL", value=d["url"]),
                 name=k2.text_input("고소인 이름 (선택)"), contact=k2.text_input("연락처 (선택)"),
-                story=st.text_area("사건 경위 (직접 작성 · AI가 만들지 않아요)", height=90),
-                harm=st.text_area("피해 내용 (직접 작성)", height=90), note=st.text_input("추가 설명 (선택)"))
-    with st.expander("📄 보고서 미리보기 (증거일람표)"):
+                story=box.text_area("사건 경위 (직접 작성 · AI가 만들지 않아요)", height=90),
+                harm=box.text_area("피해 내용 (직접 작성)", height=90), note=box.text_input("추가 설명 (선택)"), auto=auto)
+    with box.popover("📄 보고서 미리보기 (증거일람표)"):
         st.dataframe(pd.DataFrame([dict(번호=f"EV-{i:03d}", 작성자=c["author"] or "미확인", 작성시각=kst(c["time"])[:19] or "미확인",
                                         원문=c["text"], 메모=c["memo"]) for i, c in enumerate(sel, 1)]), hide_index=True)
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3 = box.columns(3)
     if sel:
         c1.download_button("📄 증거 정리 보고서 PDF 다운로드", report(sel, d, case, len(df)), "EVIDA_증거정리보고서.pdf",
                            "application/pdf", type="primary")
