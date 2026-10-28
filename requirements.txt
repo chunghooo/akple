@@ -1,7 +1,7 @@
 streamlit
 requests
 pandas
-python-docx
+reportlab
 pytesseract
 Pillow
 scikit-learn
